@@ -175,10 +175,21 @@ def read_censo(b,name):
     else:
         x=pd.ExcelFile(bio);d=None
         for sh in x.sheet_names:
+            # Ambos archivos de respuestas tienen account_id, pero el archivo ON
+            # no trae Comentario_Revision. No debe bloquear la carga por eso.
             z=pd.read_excel(x,sheet_name=sh,nrows=5)
-            if {'account_id','Comentario_Revision'}.issubset({str(c).strip() for c in z.columns}):d=pd.read_excel(x,sheet_name=sh);break
-        if d is None:raise ValueError('No encontré account_id y Comentario_Revision en el Excel.')
-    d.columns=[str(c).strip() for c in d.columns];return d
+            cols={str(c).strip() for c in z.columns}
+            if 'account_id' in cols:
+                d=pd.read_excel(x,sheet_name=sh)
+                break
+        if d is None:raise ValueError('No encontré la columna account_id en el Excel.')
+    d.columns=[str(c).strip() for c in d.columns]
+    # ON no posee Comentario_Revision ni preguntas de volumen a corregir.
+    # Se incorpora igual como fuente, pero con comentario vacío para que no
+    # genere falsos pendientes en la cola de revisión.
+    if 'Comentario_Revision' not in d.columns:
+        d['Comentario_Revision']=''
+    return d
 
 def build(d):
     c,s=lookups();w=d.copy()
