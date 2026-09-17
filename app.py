@@ -26,7 +26,7 @@ def fnum(v,d=2):
     if v is None or pd.isna(v):return '—'
     return f'{float(v):,.{d}f}'.replace(',','X').replace('.',',').replace('X','.')
 def client_code(v):
-    s=re.sub(r'\D','',re.sub(r'\.0$','',txt(v)));s=s[6:] if s.startswith('070549') else s
+    s=re.sub(r'\D','',re.sub(r'\.0$','',txt(v)));s=s.zfill(14) if len(s)==13 and s.startswith('70549') else s;s=s[6:] if s.startswith('070549') else s
     return str(int(s)) if s else ''
 
 def flags(v):
