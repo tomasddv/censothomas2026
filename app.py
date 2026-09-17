@@ -9,7 +9,49 @@ DEFAULT_DRIVE_URL='https://drive.google.com/drive/folders/1cukgXLUaPsEDK_yD7tSwg
 DEFAULT_DRIVE_FOLDER_ID='1cukgXLUaPsEDK_yD7tSwgaBFZAbiDUot'
 UNDO_SECONDS=8
 st.set_page_config(page_title='Revisión Censo DDV',page_icon='✅',layout='wide')
-st.markdown('''<style>:root{color-scheme:light!important}.stApp,[data-testid="stAppViewContainer"],[data-testid="stSidebar"]{background:#f6f8fb!important;color:#172033!important}[data-testid="stSidebar"]{border-right:1px solid #e5e9f0}.block-container{max-width:1750px;padding-top:1.2rem}.card{background:#fff;border:1px solid #e3e8ef;border-radius:10px;padding:.35rem .5rem;margin:.25rem 0}.auto{border-left:4px solid #16a34a}.corr{border-left:4px solid #2563eb}.pend{border-left:4px solid #cbd5e1}.muted{color:#64748b;font-size:.75rem}.num{font-weight:700;font-variant-numeric:tabular-nums}.ok{color:#15803d;font-weight:700}.blue{color:#1d4ed8;font-weight:700}.stButton button[kind="primary"]{background:#16a34a!important;border-color:#16a34a!important;color:#fff!important;font-weight:800!important}.stButton button[kind="primary"]:hover{background:#15803d!important;border-color:#15803d!important}.undo-note{background:#ecfdf3;border:1px solid #86efac;color:#166534;border-radius:8px;padding:.35rem .55rem;font-size:.78rem;font-weight:700}</style>''',unsafe_allow_html=True)
+st.markdown('''<style>:root{color-scheme:light!important}.stApp,[data-testid="stAppViewContainer"],[data-testid="stSidebar"]{background:#f6f8fb!important;color:#172033!important}[data-testid="stSidebar"]{border-right:1px solid #e5e9f0}.block-container{max-width:1750px;padding-top:1.2rem}.card{background:#fff;border:1px solid #e3e8ef;border-radius:10px;padding:.35rem .5rem;margin:.25rem 0}.auto{border-left:4px solid #16a34a}.corr{border-left:4px solid #2563eb}.pend{border-left:4px solid #cbd5e1}.muted{color:#64748b;font-size:.75rem}.num{font-weight:700;font-variant-numeric:tabular-nums}.ok{color:#15803d;font-weight:700}.blue{color:#1d4ed8;font-weight:700}.stButton button[kind="primary"]{background:#16a34a!important;border-color:#16a34a!important;color:#fff!important;font-weight:800!important}.stButton button[kind="primary"]:hover{background:#15803d!important;border-color:#15803d!important}.undo-note{background:#ecfdf3;border:1px solid #86efac;color:#166534;border-radius:8px;padding:.35rem .55rem;font-size:.78rem;font-weight:700}
+/* Explicit contrast for the light page and dark interactive controls. */
+.stApp [data-testid="stMarkdownContainer"],
+.stApp [data-testid="stWidgetLabel"],
+.stApp [data-testid="stMetricLabel"],
+.stApp [data-testid="stMetricValue"],
+.stApp [data-testid="stCaptionContainer"],
+.stApp [data-testid="stExpander"] summary,
+.stApp h1,.stApp h2,.stApp h3,.stApp label {
+    color:#111111!important;
+}
+.stApp [data-baseweb="select"]>div,
+.stApp [data-baseweb="input"],
+.stApp [data-baseweb="base-input"],
+.stApp input,.stApp textarea,
+.stApp [data-testid="stNumberInput"] button,
+.stApp button[kind="secondary"],
+.stApp [data-testid="stDownloadButton"] button {
+    background-color:#24262f!important;
+    color:#ffffff!important;
+}
+.stApp [data-baseweb="select"] *,
+.stApp button[kind="secondary"] *,
+.stApp [data-testid="stDownloadButton"] button *,
+.stApp button[kind="primary"] *,
+.stApp [data-testid="stNumberInput"] button * {
+    color:#ffffff!important;
+    -webkit-text-fill-color:#ffffff!important;
+}
+.stApp input,.stApp textarea {
+    -webkit-text-fill-color:#ffffff!important;
+}
+.stApp input::placeholder,.stApp textarea::placeholder {
+    color:#e0e0e0!important;
+    -webkit-text-fill-color:#e0e0e0!important;
+}
+[data-baseweb="popover"],[role="listbox"],[role="option"] {
+    background-color:#24262f!important;
+    color:#ffffff!important;
+}
+[role="option"] * {color:#ffffff!important;}
+.stApp input:disabled {opacity:1!important;}
+</style>''',unsafe_allow_html=True)
 
 def txt(v):
     return '' if v is None or (isinstance(v,float) and math.isnan(v)) else str(v).strip()
@@ -368,3 +410,4 @@ for r in page_df.itertuples():
     with st.expander('Detalle'):st.write(f'**Archivo origen:** {r.source_file}');st.write(f'**Comentario:** {r.comment}');st.write(f'**Pregunta:** {r.field}');st.write(f'**Ventas:** Jun {fnum(r.jun,3)} · Jul {fnum(r.jul,3)} · Ago {fnum(r.aug,3)} · Prom. mes {fnum(r.monthly,3)}')
     st.markdown('</div>',unsafe_allow_html=True)
 st.caption('Todo caso distinto de Censado 0,25 + Venta semanal menor a 0,25 queda para revisión manual.')
+
