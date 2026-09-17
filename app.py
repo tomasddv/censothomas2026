@@ -6,6 +6,7 @@ import streamlit as st
 
 ROOT=Path(__file__).resolve().parent; DATA=ROOT/'data'; DIST='DISTRIBUIDORA DEL VALLE S.A.'
 DEFAULT_DRIVE_URL='https://drive.google.com/drive/folders/1cukgXLUaPsEDK_yD7tSwgaBFZAbiDUot'
+DEFAULT_DRIVE_FOLDER_ID='1cukgXLUaPsEDK_yD7tSwgaBFZAbiDUot'
 UNDO_SECONDS=8
 st.set_page_config(page_title='Revisión Censo DDV',page_icon='✅',layout='wide')
 st.markdown('''<style>:root{color-scheme:light!important}.stApp,[data-testid="stAppViewContainer"],[data-testid="stSidebar"]{background:#f6f8fb!important;color:#172033!important}[data-testid="stSidebar"]{border-right:1px solid #e5e9f0}.block-container{max-width:1750px;padding-top:1.2rem}.card{background:#fff;border:1px solid #e3e8ef;border-radius:10px;padding:.35rem .5rem;margin:.25rem 0}.auto{border-left:4px solid #16a34a}.corr{border-left:4px solid #2563eb}.pend{border-left:4px solid #cbd5e1}.muted{color:#64748b;font-size:.75rem}.num{font-weight:700;font-variant-numeric:tabular-nums}.ok{color:#15803d;font-weight:700}.blue{color:#1d4ed8;font-weight:700}.stButton button[kind="primary"]{background:#16a34a!important;border-color:#16a34a!important;color:#fff!important;font-weight:800!important}.stButton button[kind="primary"]:hover{background:#15803d!important;border-color:#15803d!important}.undo-note{background:#ecfdf3;border:1px solid #86efac;color:#166534;border-radius:8px;padding:.35rem .55rem;font-size:.78rem;font-weight:700}</style>''',unsafe_allow_html=True)
@@ -72,6 +73,68 @@ def response_file_name(name):
     n=normalized_filename(Path(name).stem);ext=Path(name).suffix.lower()
     if ext not in {'.xlsx','.xlsm','.xls','.csv'} or 'RESPUESTAS' not in n:return False
     return 'DISTRIB' in n or re.search(r'(^| )ON( |$)',n) is not None
+
+def drive_folder_id(value):
+    value=txt(value)
+    m=re.search(r'/folders/([A-Za-z0-9_-]+)',value)
+    return m.group(1) if m else (value if re.fullmatch(r'[A-Za-z0-9_-]{10,}',value) else DEFAULT_DRIVE_FOLDER_ID)
+
+def has_service_account():
+    try:return 'gcp_service_account' in st.secrets
+    except Exception:return False
+
+@st.cache_data(show_spinner=False,ttl=300)
+def drive_response_files_private(folder_id,refresh_token=0):
+    """Lee una carpeta privada de Drive usando una cuenta de servicio de solo lectura."""
+    if not has_service_account():return []
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build as google_build
+    from googleapiclient.http import MediaIoBaseDownload
+    info=dict(st.secrets['gcp_service_account'])
+    creds=service_account.Credentials.from_service_account_info(
+        info,scopes=['https://www.googleapis.com/auth/drive.readonly']
+    )
+    service=google_build('drive','v3',credentials=creds,cache_discovery=False)
+    q=f"'{folder_id}' in parents and trashed = false"
+    files=[];token=None
+    while True:
+        res=service.files().list(
+            q=q,
+            fields='nextPageToken,files(id,name,mimeType,modifiedTime)',
+            pageSize=1000,
+            pageToken=token,
+            orderBy='modifiedTime desc',
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        ).execute()
+        files.extend(res.get('files',[]));token=res.get('nextPageToken')
+        if not token:break
+    groups={'distrib':[],'on':[]}
+    for item in files:
+        name=item.get('name','')
+        if not response_file_name(name):continue
+        n=normalized_filename(name);family='distrib' if 'DISTRIB' in n else 'on'
+        dates=re.findall(r'20\d{6}',n);date_key=max(dates) if dates else ''
+        groups[family].append((date_key,item.get('modifiedTime',''),normalized_filename(name),item))
+    candidates=[]
+    for family in ('distrib','on'):
+        if groups[family]:candidates.append(max(groups[family])[-1])
+    out=[]
+    for item in candidates:
+        name=item['name'];mime=item.get('mimeType','')
+        if mime=='application/vnd.google-apps.spreadsheet':
+            req=service.files().export_media(
+                fileId=item['id'],
+                mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            if not Path(name).suffix:name=name+'.xlsx'
+        else:
+            req=service.files().get_media(fileId=item['id'],supportsAllDrives=True)
+        bio=io.BytesIO();downloader=MediaIoBaseDownload(bio,req,chunksize=1024*1024)
+        done=False
+        while not done:_,done=downloader.next_chunk()
+        out.append((name,bio.getvalue()))
+    return out
 
 @st.cache_data(show_spinner=False,ttl=300)
 def drive_response_files(drive_url,refresh_token=0):
@@ -162,19 +225,30 @@ drive_url=st.sidebar.text_input('Carpeta de Google Drive',value=DEFAULT_DRIVE_UR
 if 'drive_refresh' not in st.session_state:st.session_state.drive_refresh=0
 if st.sidebar.button('↻ Actualizar desde Drive',use_container_width=True):
     st.session_state.drive_refresh+=1;drive_response_files.clear();st.rerun()
-st.sidebar.caption('Busca automáticamente los archivos Respuestas_DISTRIBU… y Respuestas_ON_2026…')
+st.sidebar.caption('Busca automáticamente el último Respuestas_DISTRIBU… y el último Respuestas_ON_…')
 st.sidebar.caption('OK automático: solo Censado = 0,25 y Venta prom./sem. < 0,25.')
-files=[];drive_error=''
-try:files=drive_response_files(drive_url,st.session_state.drive_refresh) if drive_url.strip() else []
+files=[];drive_error='';drive_mode=''
+folder_id=drive_folder_id(drive_url)
+try:
+    if has_service_account():
+        files=drive_response_files_private(folder_id,st.session_state.drive_refresh);drive_mode='Drive privado'
+    if not files:
+        files=drive_response_files(drive_url,st.session_state.drive_refresh) if drive_url.strip() else []
+        if files:drive_mode='Drive por enlace'
 except Exception as e:drive_error=str(e)
 if files:
-    st.sidebar.success(f'{len(files)} archivo(s) de respuestas cargados desde Drive')
+    st.sidebar.success(f'{len(files)} archivo(s) cargados · {drive_mode}')
     for name,_ in files:st.sidebar.caption('• '+name)
 else:
-    if drive_error:st.sidebar.warning('No pude leer Drive automáticamente. Podés usar la carga manual de respaldo.')
+    if has_service_account():
+        st.sidebar.warning('La cuenta de servicio no pudo leer la carpeta. Verificá que la carpeta esté compartida con el email client_email del secreto.')
+    else:
+        st.sidebar.warning('Drive es privado. Configurá gcp_service_account en Secrets o hacé pública la carpeta por enlace.')
+    if drive_error:st.sidebar.caption('Detalle técnico: '+drive_error[:240])
     ups=st.sidebar.file_uploader('Respaldo: cargar respuestas manualmente',type=['xlsx','xlsm','xls','csv'],accept_multiple_files=True)
     files=[(u.name,u.getvalue()) for u in (ups or [])]
-if not files:st.info('No encontré los archivos de respuestas en Drive. Revisá que la carpeta sea accesible por enlace o usá la carga manual.');st.stop()
+if not files:
+    st.info('No pude acceder a los archivos de Drive. Para una carpeta privada, configurá la cuenta de servicio en Streamlit Secrets y compartí la carpeta con ese correo.');st.stop()
 try:d=build(combine_censo_files(files))
 except Exception as e:st.error(f'No pude procesar las respuestas: {e}');st.stop()
 if d.empty:st.warning('No encontré campos de revisión para DDV.');st.stop()
