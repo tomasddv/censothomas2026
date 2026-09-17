@@ -315,13 +315,13 @@ z=enriched(d,state);done=z[z.Estado!='Pendiente'];pend=z[z.Estado=='Pendiente']
 a,b,c,d1=st.columns(4);a.metric('Campos',len(z));b.metric('OK',int(z.OK.sum()));c.metric('Corregidos',int(z['Corrección'].notna().sum()));d1.metric('Pendientes',len(pend))
 
 f1,f2,f3,f4,f5,f6=st.columns(6)
-sup=f1.selectbox('Supervisor',['Todos']+sorted(z.supervisor.unique()));pro=f2.selectbox('Promotor',['Todos']+sorted(z.promotor.unique()));bra=f3.selectbox('Marca',['Todas']+sorted(z.brand.unique()));prd=f4.selectbox('Producto',['Todos']+sorted(z[z.brand.eq(bra)].product.unique() if bra!='Todas' else z.product.unique()));est=f5.selectbox('Estado',['Todos','Pendientes','Completados']);okf=f6.selectbox('OK',['Todos','OK','No OK'])
+sup=f1.selectbox('Supervisor',['Todos']+sorted(z.supervisor.unique()));pro=f2.selectbox('Promotor',['Todos']+sorted(z.promotor.unique()));bra=f3.selectbox('Marca',['Todas']+sorted(z.brand.unique()));prd=f4.selectbox('Producto',['Todos']+sorted(z.loc[z['brand'].eq(bra),'product'].unique() if bra!='Todas' else z['product'].unique()));est=f5.selectbox('Estado',['Todos','Pendientes','Completados']);okf=f6.selectbox('OK',['Todos','OK','No OK'])
 search=st.text_input('Cliente',placeholder='Código, nombre o account ID')
 f=z
 if sup!='Todos':f=f[f.supervisor.eq(sup)]
 if pro!='Todos':f=f[f.promotor.eq(pro)]
 if bra!='Todas':f=f[f.brand.eq(bra)]
-if prd!='Todos':f=f[f.product.eq(prd)]
+if prd!='Todos':f=f[f['product'].eq(prd)]
 if est=='Pendientes':f=f[f.Estado.eq('Pendiente')]
 elif est=='Completados':f=f[~f.Estado.eq('Pendiente')]
 if okf=='OK':f=f[f.OK]
