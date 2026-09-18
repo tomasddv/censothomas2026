@@ -171,6 +171,76 @@ e1.metric('Faltan completar',available_count,help='Clientes cuyo último estado 
 """
     src = _replace_once(src, old_metrics, new_metrics, 'KPIs por cliente')
 
+    # Make the automatic rules explicit in the UI.
+    src = _replace_once(
+        src,
+        "st.sidebar.caption('OK automático: solo Censado = 0,25 y Venta prom./sem. < 0,25.')",
+        "st.sidebar.caption('OK automático: 0/0 · Censado 0,25 con Venta < 0,25 · diferencia absoluta de 0,50.')",
+        'texto reglas sidebar',
+    )
+    src = _replace_once(
+        src,
+        "st.caption('Todo caso distinto de Censado 0,25 + Venta semanal menor a 0,25 queda para revisión manual.')",
+        "st.caption('OK automático: 0/0 · Censado 0,25 con Venta semanal < 0,25 · diferencia absoluta Censado vs Venta = 0,50. El resto queda para revisión manual.')",
+        'texto reglas pie',
+    )
+
+    # Promotor selector with client counts, plus an explicit summary by promoter.
+    old_filters = """f1,f2,f3,f4,f5,f6=st.columns(6)
+sup=f1.selectbox('Supervisor',['Todos']+sorted(z.supervisor.unique()));pro=f2.selectbox('Promotor',['Todos']+sorted(z.promotor.unique()));bra=f3.selectbox('Marca',['Todas']+sorted(z.brand.unique()));prd=f4.selectbox('Producto',['Todos']+sorted(z.loc[z['brand'].eq(bra),'product'].unique() if bra!='Todas' else z['product'].unique()));est=f5.selectbox('Estado',['Todos','Pendientes','Completados']);okf=f6.selectbox('OK',['Todos','OK','No OK'])
+search=st.text_input('Cliente',placeholder='Código, nombre o account ID')
+f=z
+if sup!='Todos':f=f[f.supervisor.eq(sup)]
+if pro!='Todos':f=f[f.promotor.eq(pro)]
+if bra!='Todas':f=f[f.brand.eq(bra)]
+if prd!='Todos':f=f[f['product'].eq(prd)]
+if est=='Pendientes':f=f[f.Estado.eq('Pendiente')]
+elif est=='Completados':f=f[~f.Estado.eq('Pendiente')]
+if okf=='OK':f=f[f.OK]
+elif okf=='No OK':f=f[(~f.OK)|f.id.isin(set(holds))]
+if search.strip():
+    q=search.lower();f=f[f.client.astype(str).str.lower().str.contains(q,regex=False)|f.name.str.lower().str.contains(q,regex=False)|f.account.astype(str).str.lower().str.contains(q,regex=False)]
+"""
+    new_filters = """f1,f2,f3,f4,f5,f6=st.columns(6)
+sup=f1.selectbox('Supervisor',['Todos']+sorted(z.supervisor.unique()))
+_prom_base=z if sup=='Todos' else z[z.supervisor.eq(sup)]
+_prom_total=_prom_base.groupby('promotor')['client'].nunique()
+_prom_pending=_prom_base[_prom_base.Estado.eq('Pendiente')].groupby('promotor')['client'].nunique()
+_prom_options=['Todos']+sorted(_prom_total.index.tolist())
+def _prom_label(p):
+    if p=='Todos':
+        return f"Todos · {int(_prom_base['client'].nunique())} clientes · {int(_prom_base.loc[_prom_base.Estado.eq('Pendiente'),'client'].nunique())} pendientes"
+    return f"{p} · {int(_prom_total.get(p,0))} clientes · {int(_prom_pending.get(p,0))} pendientes"
+pro=f2.selectbox('Promotor',_prom_options,format_func=_prom_label)
+bra=f3.selectbox('Marca',['Todas']+sorted(z.brand.unique()))
+prd=f4.selectbox('Producto',['Todos']+sorted(z.loc[z['brand'].eq(bra),'product'].unique() if bra!='Todas' else z['product'].unique()))
+est=f5.selectbox('Estado',['Todos','Pendientes','Completados'])
+okf=f6.selectbox('OK',['Todos','OK','No OK'])
+
+_prom_summary=pd.DataFrame({
+    'Clientes a revisar':_prom_total,
+    'Clientes pendientes':_prom_pending
+}).fillna(0).astype(int)
+_prom_summary['Clientes resueltos']=_prom_summary['Clientes a revisar']-_prom_summary['Clientes pendientes']
+_prom_summary=_prom_summary.reset_index().rename(columns={'promotor':'Promotor'})
+with st.expander('📊 Cantidad de clientes por promotor',expanded=False):
+    st.dataframe(_prom_summary,hide_index=True,use_container_width=True)
+
+search=st.text_input('Cliente',placeholder='Código, nombre o account ID')
+f=z
+if sup!='Todos':f=f[f.supervisor.eq(sup)]
+if pro!='Todos':f=f[f.promotor.eq(pro)]
+if bra!='Todas':f=f[f.brand.eq(bra)]
+if prd!='Todos':f=f[f['product'].eq(prd)]
+if est=='Pendientes':f=f[f.Estado.eq('Pendiente')]
+elif est=='Completados':f=f[~f.Estado.eq('Pendiente')]
+if okf=='OK':f=f[f.OK]
+elif okf=='No OK':f=f[(~f.OK)|f.id.isin(set(holds))]
+if search.strip():
+    q=search.lower();f=f[f.client.astype(str).str.lower().str.contains(q,regex=False)|f.name.str.lower().str.contains(q,regex=False)|f.account.astype(str).str.lower().str.contains(q,regex=False)]
+"""
+    src = _replace_once(src, old_filters, new_filters, 'filtros y resumen por promotor')
+
     # Generate the heavy Excel only on demand.
     old_downloads = """x1,x2=st.columns(2);x1.download_button('⬇ Descargar corrección CSV',export(done).to_csv(index=False,sep=';',decimal=',').encode('utf-8-sig'),'correccion_censo_ddv.csv','text/csv',use_container_width=True);x2.download_button('⬇ Descargar corrección Excel',excel(done,pend),'correccion_censo_ddv.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',use_container_width=True)
 """
@@ -185,13 +255,31 @@ if _excel_key in st.session_state:
 """
     src = _replace_once(src, old_downloads, new_downloads, 'Excel bajo demanda')
 
-    # Faster default page; fewer widgets per run.
-    src = _replace_once(
-        src,
-        "size=st.selectbox('Filas por página',[25,50,100],index=1)",
-        "size=st.selectbox('Filas por página',[10,25,50,100],index=1)",
-        'paginación',
-    )
+    # Paginate by CLIENT, not by product/question rows, and show clear page progress.
+    old_pagination = """size=st.selectbox('Filas por página',[25,50,100],index=1);pages=max(1,math.ceil(len(f)/size));page=st.number_input('Página',1,pages,1);page_df=f.iloc[(page-1)*size:page*size];st.caption(f'Mostrando {len(f)} de {len(z)}')
+"""
+    new_pagination = """_client_list=f[['client','name','promotor']].drop_duplicates('client').sort_values(['promotor','name','client']) if not f.empty else f[['client','name','promotor']].drop_duplicates('client')
+_filtered_clients=int(len(_client_list))
+_filtered_pending=int(f.loc[f.Estado.eq('Pendiente'),'client'].nunique()) if not f.empty else 0
+_nav1,_nav2,_nav3=st.columns([1.2,1,3])
+size=_nav1.selectbox('Clientes por página',[5,10,15,25,50],index=1,key=f'clients_per_page_{fp}')
+pages=max(1,math.ceil(_filtered_clients/size))
+_page_key=f'page_clients_{fp}'
+if _page_key not in st.session_state:st.session_state[_page_key]=1
+if st.session_state[_page_key]>pages:st.session_state[_page_key]=pages
+page=int(_nav2.number_input('Página',min_value=1,max_value=pages,step=1,key=_page_key))
+_start=(page-1)*size
+_end=min(_start+size,_filtered_clients)
+_page_clients=_client_list.iloc[_start:_end]['client'].tolist() if _filtered_clients else []
+page_df=f[f.client.isin(_page_clients)].copy()
+if not page_df.empty:
+    page_df['_client_order']=pd.Categorical(page_df['client'],categories=_page_clients,ordered=True)
+    page_df=page_df.sort_values(['_client_order','product']).drop(columns=['_client_order'])
+_selected_name='Todos los promotores' if pro=='Todos' else pro
+_nav3.markdown(f"**{_selected_name}**  \\n{_filtered_clients} clientes en el filtro · {_filtered_pending} con revisión pendiente")
+st.info(f"Página {page} de {pages} · mostrando clientes {_start+1 if _filtered_clients else 0} a {_end} de {_filtered_clients}. Cada cliente puede tener más de una pregunta/producto para revisar.")
+"""
+    src = _replace_once(src, old_pagination, new_pagination, 'paginación por clientes')
 
     # Only keep real undo grace-period rows inside No OK.
     src = _replace_once(
