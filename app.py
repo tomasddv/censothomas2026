@@ -42,10 +42,12 @@ def _optimized_source() -> str:
     # Automatic OK rules:
     # 1) censado = 0.25 and venta promedio semanal < 0.25
     # 2) censado = 0 and venta promedio semanal = 0
+    # 3) diferencia absoluta entre censado y venta promedio semanal = 0.50
+    #    (vale tanto +0.50 como -0.50)
     src = _replace_once(
         src,
         "def auto(r):return pd.notna(r.census) and pd.notna(r.weekly) and abs(float(r.census)-.25)<1e-9 and float(r.weekly)<.25",
-        "def auto(r):return pd.notna(r.census) and pd.notna(r.weekly) and ((abs(float(r.census)-.25)<1e-9 and float(r.weekly)<.25) or (abs(float(r.census))<1e-9 and abs(float(r.weekly))<1e-9))",
+        "def auto(r):return pd.notna(r.census) and pd.notna(r.weekly) and ((abs(float(r.census)-.25)<1e-9 and float(r.weekly)<.25) or (abs(float(r.census))<1e-9 and abs(float(r.weekly))<1e-9) or abs(abs(float(r.census)-float(r.weekly))-.50)<1e-9)",
         'reglas de OK automático',
     )
 
