@@ -196,20 +196,6 @@ e1.metric('Faltan completar',available_count,help='Clientes cuyo último estado 
 """
     src = _replace_once(src, old_metrics, new_metrics, 'KPIs por cliente')
 
-    # Make the automatic rules explicit in the UI.
-    src = _replace_once(
-        src,
-        "st.sidebar.caption('OK automático: solo Censado = 0,25 y Venta prom./sem. < 0,25.')",
-        "st.sidebar.caption('OK automático: 0/0 · Censado 0,25 con Venta < 0,25 · diferencia absoluta de 0,50.')",
-        'texto reglas sidebar',
-    )
-    src = _replace_once(
-        src,
-        "st.caption('Todo caso distinto de Censado 0,25 + Venta semanal menor a 0,25 queda para revisión manual.')",
-        "st.caption('OK automático: 0/0 · Censado 0,25 con Venta semanal < 0,25 · diferencia absoluta Censado vs Venta = 0,50. El resto queda para revisión manual.')",
-        'texto reglas pie',
-    )
-
     # Promotor selector with client counts, plus an explicit summary by promoter.
     old_filters = """f1,f2,f3,f4,f5,f6=st.columns(6)
 sup=f1.selectbox('Supervisor',['Todos']+sorted(z.supervisor.unique()));pro=f2.selectbox('Promotor',['Todos']+sorted(z.promotor.unique()));bra=f3.selectbox('Marca',['Todas']+sorted(z.brand.unique()));prd=f4.selectbox('Producto',['Todos']+sorted(z.loc[z['brand'].eq(bra),'product'].unique() if bra!='Todas' else z['product'].unique()));est=f5.selectbox('Estado',['Todos','Pendientes','Completados']);okf=f6.selectbox('OK',['Todos','OK','No OK'])
