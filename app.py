@@ -62,14 +62,15 @@ def _optimized_source() -> str:
         'cache de combinación',
     )
 
-    # Count clients whose latest ON/OFF task is still AVAILABLE.
-    available_helper = r'''def available_clients_count(df):
+    # AVAILABLE: detalle por cliente, total y resumen por promotor.
+    available_helper = r'''def _latest_available_clients(df):
+    cols=['_client_key','account_id','FECHA_TAREA','Tipo_Encuesta','DISTRIBUIDOR']
     if df is None or df.empty or 'account_id' not in df.columns or 'ESTADO_TAREA' not in df.columns:
-        return 0
+        return pd.DataFrame(columns=cols)
     a=df.copy()
     a['_client_key']=a['account_id'].map(client_code)
     a=a[a['_client_key'].astype(str).str.strip().ne('')]
-    if a.empty:return 0
+    if a.empty:return pd.DataFrame(columns=cols)
     keys=['_client_key']
     if 'Tipo_Encuesta' in a.columns:keys.append('Tipo_Encuesta')
     if 'FECHA_TAREA' in a.columns:a['_task_date']=pd.to_datetime(a['FECHA_TAREA'],errors='coerce')
@@ -77,7 +78,52 @@ def _optimized_source() -> str:
     if '__source_order' not in a.columns:a['__source_order']=0
     a=a.sort_values(['_task_date','__source_order'],na_position='first').drop_duplicates(keys,keep='last')
     is_available=a['ESTADO_TAREA'].astype(str).str.strip().str.upper().eq('AVAILABLE')
-    return int(a.loc[is_available,'_client_key'].nunique())
+    a=a.loc[is_available].copy()
+    if a.empty:return pd.DataFrame(columns=cols)
+    a=a.sort_values(['_task_date','__source_order'],na_position='first').drop_duplicates('_client_key',keep='last')
+    for col in cols:
+        if col not in a.columns:a[col]=''
+    return a[cols]
+
+def available_clients_detail(df):
+    a=_latest_available_clients(df)
+    columns=['Código cliente','Account ID','Nombre','Promotor','Supervisor','Fecha tarea','Encuesta','Distribuidor']
+    if a.empty:return pd.DataFrame(columns=columns)
+    c,_=lookups()
+    rows=[]
+    for _,r in a.iterrows():
+        cli=txt(r.get('_client_key'))
+        prom='Sin promotor asignado'
+        sup='Sin supervisor asignado'
+        name='Nombre no disponible'
+        if cli in c.index:
+            ci=c.loc[cli]
+            if isinstance(ci,pd.DataFrame):ci=ci.iloc[0]
+            prom=txt(ci.get('promotor')) or prom
+            sup=txt(ci.get('supervisor')) or sup
+            name=txt(ci.get('name')) or name
+        rows.append({
+            'Código cliente':cli,
+            'Account ID':txt(r.get('account_id')),
+            'Nombre':name,
+            'Promotor':prom,
+            'Supervisor':sup,
+            'Fecha tarea':txt(r.get('FECHA_TAREA'))[:10],
+            'Encuesta':txt(r.get('Tipo_Encuesta')),
+            'Distribuidor':txt(r.get('DISTRIBUIDOR'))
+        })
+    return pd.DataFrame(rows,columns=columns).sort_values(['Supervisor','Promotor','Nombre','Código cliente']).reset_index(drop=True)
+
+def available_clients_count(df):
+    return int(len(available_clients_detail(df)))
+
+def available_clients_by_promotor(df):
+    b=available_clients_detail(df)
+    if b.empty:
+        return pd.DataFrame(columns=['supervisor','promotor','Clientes AVAILABLE'])
+    return b.groupby(['Supervisor','Promotor'],dropna=False)['Código cliente'].nunique().reset_index().rename(
+        columns={'Supervisor':'supervisor','Promotor':'promotor','Código cliente':'Clientes AVAILABLE'}
+    )
 
 '''
     src = _replace_once(src, 'def build(d):\n', available_helper + 'def build(d):\n', 'contador AVAILABLE')
@@ -144,7 +190,7 @@ fp=h.hexdigest()[:12];sk='state_'+fp
 for name,b in files:
     h.update(name.encode('utf-8'));h.update(b)
 fp=h.hexdigest()[:12]
-_data_key='prepared_data_'+fp
+_data_key='prepared_data_v4_'+fp
 if _data_key not in st.session_state:
     try:
         combined=combine_censo_files(files)
@@ -153,13 +199,21 @@ if _data_key not in st.session_state:
         st.stop()
     try:
         d=build(combined)
-        available_count=available_clients_count(combined)
+        available_detail=available_clients_detail(combined)
+        available_count=int(len(available_detail))
+        available_by_promotor=(
+            available_detail.groupby(['Supervisor','Promotor'],dropna=False)['Código cliente']
+            .nunique().reset_index()
+            .rename(columns={'Supervisor':'supervisor','Promotor':'promotor','Código cliente':'Clientes AVAILABLE'})
+            if not available_detail.empty else
+            pd.DataFrame(columns=['supervisor','promotor','Clientes AVAILABLE'])
+        )
     except Exception as e:
         st.error(f'No pude cruzar las respuestas con clientes/ventas: {type(e).__name__}: {e}')
         st.stop()
-    st.session_state[_data_key]=(d,available_count)
+    st.session_state[_data_key]=(d,available_count,available_by_promotor,available_detail)
 else:
-    d,available_count=st.session_state[_data_key]
+    d,available_count,available_by_promotor,available_detail=st.session_state[_data_key]
 if d.empty:st.warning('No encontré campos de revisión para DDV.');st.stop()
 sk='state_'+fp
 """
@@ -217,25 +271,80 @@ sup=f1.selectbox('Supervisor',['Todos']+sorted(z.supervisor.unique()))
 _prom_base=z if sup=='Todos' else z[z.supervisor.eq(sup)]
 _prom_total=_prom_base.groupby('promotor')['client'].nunique()
 _prom_pending=_prom_base[_prom_base.Estado.eq('Pendiente')].groupby('promotor')['client'].nunique()
-_prom_options=['Todos']+sorted(_prom_total.index.tolist())
+
+_avail_base=available_by_promotor if sup=='Todos' else available_by_promotor[available_by_promotor['supervisor'].eq(sup)]
+_prom_available=_avail_base.groupby('promotor')['Clientes AVAILABLE'].sum() if not _avail_base.empty else pd.Series(dtype='int64')
+
+_all_promoters=sorted(set(_prom_total.index.tolist()) | set(_prom_available.index.tolist()))
+_prom_options=['Todos']+_all_promoters
+
 def _prom_label(p):
     if p=='Todos':
-        return f"Todos · {int(_prom_base['client'].nunique())} clientes · {int(_prom_base.loc[_prom_base.Estado.eq('Pendiente'),'client'].nunique())} pendientes"
-    return f"{p} · {int(_prom_total.get(p,0))} clientes · {int(_prom_pending.get(p,0))} pendientes"
+        return f"Todos · {int(_prom_base['client'].nunique())} a revisar · {int(_prom_base.loc[_prom_base.Estado.eq('Pendiente'),'client'].nunique())} pendientes · {int(_prom_available.sum())} AVAILABLE"
+    return f"{p} · {int(_prom_total.get(p,0))} a revisar · {int(_prom_pending.get(p,0))} pendientes · {int(_prom_available.get(p,0))} AVAILABLE"
+
 pro=f2.selectbox('Promotor',_prom_options,format_func=_prom_label)
 bra=f3.selectbox('Marca',['Todas']+sorted(z.brand.unique()))
 prd=f4.selectbox('Producto',['Todos']+sorted(z.loc[z['brand'].eq(bra),'product'].unique() if bra!='Todas' else z['product'].unique()))
 est=f5.selectbox('Estado',['Todos','Pendientes','Completados'])
 okf=f6.selectbox('OK',['Todos','OK','No OK'])
 
-_prom_summary=pd.DataFrame({
-    'Clientes a revisar':_prom_total,
-    'Clientes pendientes':_prom_pending
-}).fillna(0).astype(int)
+_prom_idx=pd.Index(_all_promoters,name='promotor')
+_prom_summary=pd.DataFrame(index=_prom_idx)
+_prom_summary['Clientes a revisar']=_prom_total.reindex(_prom_idx,fill_value=0).astype(int)
+_prom_summary['Clientes pendientes']=_prom_pending.reindex(_prom_idx,fill_value=0).astype(int)
 _prom_summary['Clientes resueltos']=_prom_summary['Clientes a revisar']-_prom_summary['Clientes pendientes']
+_prom_summary['Clientes AVAILABLE']=_prom_available.reindex(_prom_idx,fill_value=0).astype(int)
 _prom_summary=_prom_summary.reset_index().rename(columns={'promotor':'Promotor'})
+
 with st.expander('📊 Cantidad de clientes por promotor',expanded=False):
     st.dataframe(_prom_summary,hide_index=True,use_container_width=True)
+
+if pro!='Todos':
+    st.info(f"📌 {pro}: {int(_prom_available.get(pro,0))} clientes AVAILABLE todavía sin completar.")
+
+with st.expander('📋 Clientes AVAILABLE para seguimiento y descarga',expanded=False):
+    _av=available_detail.copy()
+    _av1,_av2,_av3=st.columns([1.2,1.5,2])
+    _av_sup_opts=['Todos']+sorted(_av['Supervisor'].dropna().astype(str).unique().tolist()) if not _av.empty else ['Todos']
+    _av_sup=_av1.selectbox('Supervisor AVAILABLE',_av_sup_opts,key=f'av_sup_{fp}')
+    _av_prom_base=_av if _av_sup=='Todos' else _av[_av['Supervisor'].eq(_av_sup)]
+    _av_pro_opts=['Todos']+sorted(_av_prom_base['Promotor'].dropna().astype(str).unique().tolist()) if not _av_prom_base.empty else ['Todos']
+    _av_pro=_av2.selectbox('Promotor AVAILABLE',_av_pro_opts,key=f'av_pro_{fp}')
+    _av_q=_av3.text_input('Buscar AVAILABLE',placeholder='Código, nombre o account ID',key=f'av_search_{fp}')
+
+    _av_f=_av.copy()
+    if _av_sup!='Todos':_av_f=_av_f[_av_f['Supervisor'].eq(_av_sup)]
+    if _av_pro!='Todos':_av_f=_av_f[_av_f['Promotor'].eq(_av_pro)]
+    if _av_q.strip():
+        _q=_av_q.strip().lower()
+        _av_f=_av_f[
+            _av_f['Código cliente'].astype(str).str.lower().str.contains(_q,regex=False) |
+            _av_f['Account ID'].astype(str).str.lower().str.contains(_q,regex=False) |
+            _av_f['Nombre'].astype(str).str.lower().str.contains(_q,regex=False)
+        ]
+
+    st.caption(f"{len(_av_f)} clientes AVAILABLE en el filtro.")
+    st.dataframe(_av_f,hide_index=True,use_container_width=True)
+
+    _dl1,_dl2=st.columns(2)
+    _dl1.download_button(
+        '⬇ Descargar listado AVAILABLE filtrado',
+        _av_f.to_csv(index=False,sep=';').encode('utf-8-sig'),
+        'clientes_available_filtrados.csv',
+        'text/csv',
+        use_container_width=True,
+        key=f'dl_av_full_{fp}'
+    )
+    _codigos='\n'.join(_av_f['Código cliente'].astype(str).tolist())
+    _dl2.download_button(
+        '⬇ Descargar solo códigos',
+        _codigos.encode('utf-8'),
+        'codigos_clientes_available.txt',
+        'text/plain',
+        use_container_width=True,
+        key=f'dl_av_codes_{fp}'
+    )
 
 search=st.text_input('Cliente',placeholder='Código, nombre o account ID')
 f=z
