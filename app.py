@@ -39,15 +39,12 @@ def _optimized_source() -> str:
         'set_page_config duplicado',
     )
 
-    # Automatic OK rules:
-    # 1) censado = 0.25 and venta promedio semanal < 0.25
-    # 2) censado = 0 and venta promedio semanal = 0
-    # 3) diferencia absoluta entre censado y venta promedio semanal = 0.50
-    #    (vale tanto +0.50 como -0.50)
+    # Automatic OK: cualquier diferencia absoluta entre censado y venta semanal
+    # menor o igual a 0.50 queda aprobada automáticamente.
     src = _replace_once(
         src,
         "def auto(r):return pd.notna(r.census) and pd.notna(r.weekly) and abs(float(r.census)-.25)<1e-9 and float(r.weekly)<.25",
-        "def auto(r):return pd.notna(r.census) and pd.notna(r.weekly) and ((abs(float(r.census)-.25)<1e-9 and float(r.weekly)<.25) or (abs(float(r.census))<1e-9 and abs(float(r.weekly))<1e-9) or abs(abs(float(r.census)-float(r.weekly))-.50)<1e-9)",
+        "def auto(r):return pd.notna(r.census) and pd.notna(r.weekly) and abs(float(r.census)-float(r.weekly))<=.50+1e-9",
         'reglas de OK automático',
     )
 
@@ -84,6 +81,34 @@ def _optimized_source() -> str:
 
 '''
     src = _replace_once(src, 'def build(d):\n', available_helper + 'def build(d):\n', 'contador AVAILABLE')
+
+    # Si el cliente/producto no tiene fila en el cruce de ventas, significa que no hubo
+    # movimientos de esos SKUs en el período. Mostrar 0 en lugar de un guion.
+    old_missing_sales = """            si=s.loc[(cli,prod)] if (cli,prod) in s.index else None
+            if isinstance(si,pd.DataFrame):si=si.iloc[0]
+            get=lambda k,default=None: default if si is None or pd.isna(si.get(k,default)) else si.get(k,default)
+"""
+    new_missing_sales = """            si=s.loc[(cli,prod)] if (cli,prod) in s.index else None
+            if isinstance(si,pd.DataFrame):si=si.iloc[0]
+            if si is None:
+                get=lambda k,default=None: (0.0 if k in {'weeklyPacks','monthlyBultos','jun','jul','aug'} else ('Sin movimientos en ventas' if k=='coverage' else default))
+            else:
+                get=lambda k,default=None: default if pd.isna(si.get(k,default)) else si.get(k,default)
+"""
+    src = _replace_once(src, old_missing_sales, new_missing_sales, 'ventas faltantes como cero')
+
+    src = _replace_once(
+        src,
+        "st.sidebar.caption('OK automático: solo Censado = 0,25 y Venta prom./sem. < 0,25.')",
+        "st.sidebar.caption('OK automático: diferencia absoluta entre Censado y Venta prom./sem. ≤ 0,50.')",
+        'texto regla OK sidebar',
+    )
+    src = _replace_once(
+        src,
+        "st.caption('Todo caso distinto de Censado 0,25 + Venta semanal menor a 0,25 queda para revisión manual.')",
+        "st.caption('OK automático cuando la diferencia absoluta entre Censado y Venta prom./sem. es ≤ 0,50. Sin ventas registradas para esos SKUs se toma Venta = 0.')",
+        'texto regla OK final',
+    )
 
     # Vectorized state enrichment.
     old_enriched = """def enriched(d,state):
