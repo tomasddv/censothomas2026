@@ -67,7 +67,9 @@ def _optimized_source() -> str:
     cols=['_client_key','account_id','FECHA_TAREA','Tipo_Encuesta','DISTRIBUIDOR']
     if df is None or df.empty or 'account_id' not in df.columns or 'ESTADO_TAREA' not in df.columns:
         return pd.DataFrame(columns=cols)
-    a=df.copy()
+    if 'DISTRIBUIDOR' not in df.columns:
+        return pd.DataFrame(columns=cols)
+    a=df.loc[df['DISTRIBUIDOR'].astype(str).str.strip().str.casefold().eq(DIST.casefold())].copy()
     a['_client_key']=a['account_id'].map(client_code)
     a=a[a['_client_key'].astype(str).str.strip().ne('')]
     if a.empty:return pd.DataFrame(columns=cols)
@@ -190,7 +192,7 @@ fp=h.hexdigest()[:12];sk='state_'+fp
 for name,b in files:
     h.update(name.encode('utf-8'));h.update(b)
 fp=h.hexdigest()[:12]
-_data_key='prepared_data_v4_'+fp
+_data_key='prepared_data_v5_'+fp
 if _data_key not in st.session_state:
     try:
         combined=combine_censo_files(files)
