@@ -336,7 +336,7 @@ with st.expander('📋 Clientes AVAILABLE para seguimiento y descarga',expanded=
         use_container_width=True,
         key=f'dl_av_full_{fp}'
     )
-    _codigos='\n'.join(_av_f['Código cliente'].astype(str).tolist())
+    _codigos='\\n'.join(_av_f['Código cliente'].astype(str).tolist())
     _dl2.download_button(
         '⬇ Descargar solo códigos',
         _codigos.encode('utf-8'),
