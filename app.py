@@ -138,10 +138,7 @@ def _drive_service_review_rw():
     info=dict(st.secrets['gcp_service_account'])
     creds=service_account.Credentials.from_service_account_info(
         info,
-        scopes=[
-            'https://www.googleapis.com/auth/drive.readonly',
-            'https://www.googleapis.com/auth/drive.file',
-        ],
+        scopes=['https://www.googleapis.com/auth/drive'],
     )
     return google_build('drive','v3',credentials=creds,cache_discovery=False)
 
@@ -197,11 +194,16 @@ def save_review_state_drive(folder_id,state):
     service=_drive_service_review_rw()
     media=MediaIoBaseUpload(io.BytesIO(data),mimetype='application/json',resumable=False)
     fid=_review_state_file_id(service,folder_id)
-    if fid:
-        service.files().update(fileId=fid,media_body=media,supportsAllDrives=True).execute()
-    else:
-        body={'name':REVIEW_STATE_FILE,'parents':[folder_id],'mimeType':'application/json'}
-        service.files().create(body=body,media_body=media,fields='id',supportsAllDrives=True).execute()
+    if not fid:
+        raise RuntimeError(
+            'No existe revision_censo_ddv_estado.json en la carpeta de Drive. '
+            'Subilo una sola vez desde tu cuenta de Google; después la app lo actualizará automáticamente.'
+        )
+    service.files().update(
+        fileId=fid,
+        media_body=media,
+        supportsAllDrives=True,
+    ).execute()
     return len(records)
 
 '''
@@ -332,7 +334,7 @@ if sk not in st.session_state:
 state=st.session_state[sk]
 hold_key='ok_hold_'+fp
 if persist_err_key in st.session_state:
-    st.sidebar.warning('⚠️ Las correcciones quedan solo en esta sesión porque Drive no permite guardarlas. Compartí la carpeta con la cuenta de servicio como EDITOR. Detalle: '+st.session_state[persist_err_key][:160])
+    st.sidebar.warning('⚠️ No pude guardar las correcciones en Drive. La carpeta ya puede estar compartida correctamente; verificá que exista el archivo revision_censo_ddv_estado.json dentro de esa carpeta. Detalle: '+st.session_state[persist_err_key][:180])
 elif has_service_account():
     st.sidebar.success('💾 Correcciones: guardado automático en Drive')
 if st.sidebar.button('💾 Guardar correcciones ahora',use_container_width=True):
@@ -343,7 +345,7 @@ if st.sidebar.button('💾 Guardar correcciones ahora',use_container_width=True)
         st.sidebar.success('Correcciones guardadas.')
     except Exception as e:
         st.session_state[persist_err_key]=str(e)
-        st.sidebar.error('No pude guardar en Drive. La carpeta debe estar compartida con la cuenta de servicio como EDITOR.')
+        st.sidebar.error('No pude guardar en Drive. Verificá que revision_censo_ddv_estado.json exista en la carpeta y que la cuenta de servicio tenga permiso de Editor.')
 """
     src = _replace_once(src, old_state_init, new_state_init, 'persistencia de correcciones')
 
