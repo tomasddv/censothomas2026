@@ -3,6 +3,7 @@ from __future__ import annotations
 import textwrap
 import traceback
 import urllib.request
+import json
 
 import streamlit as st
 
@@ -127,6 +128,82 @@ def available_clients_by_promotor(df):
         columns={'Supervisor':'supervisor','Promotor':'promotor','Código cliente':'Clientes AVAILABLE'}
     )
 
+REVIEW_STATE_FILE='revision_censo_ddv_estado.json'
+
+def _drive_service_review_rw():
+    if not has_service_account():
+        raise RuntimeError('No hay cuenta de servicio configurada.')
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build as google_build
+    info=dict(st.secrets['gcp_service_account'])
+    creds=service_account.Credentials.from_service_account_info(
+        info,
+        scopes=[
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/drive.file',
+        ],
+    )
+    return google_build('drive','v3',credentials=creds,cache_discovery=False)
+
+def _review_state_file_id(service,folder_id):
+    safe=REVIEW_STATE_FILE.replace("'","\'")
+    q=f"'{folder_id}' in parents and trashed = false and name = '{safe}'"
+    res=service.files().list(
+        q=q,
+        fields='files(id,name,modifiedTime)',
+        pageSize=20,
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+        orderBy='modifiedTime desc',
+    ).execute()
+    files=res.get('files',[])
+    return files[0]['id'] if files else None
+
+def load_review_state_drive(folder_id):
+    if not has_service_account():return {}
+    from googleapiclient.http import MediaIoBaseDownload
+    service=_drive_service_review_rw()
+    fid=_review_state_file_id(service,folder_id)
+    if not fid:return {}
+    req=service.files().get_media(fileId=fid,supportsAllDrives=True)
+    bio=io.BytesIO();downloader=MediaIoBaseDownload(bio,req,chunksize=256*1024)
+    done=False
+    while not done:_,done=downloader.next_chunk()
+    raw=bio.getvalue().decode('utf-8').strip()
+    if not raw:return {}
+    obj=json.loads(raw)
+    return obj.get('records',obj) if isinstance(obj,dict) else {}
+
+def save_review_state_drive(folder_id,state):
+    if not has_service_account():
+        raise RuntimeError('No hay cuenta de servicio configurada.')
+    from googleapiclient.http import MediaIoBaseUpload
+    records={}
+    for rid,x in state.items():
+        corr=x.get('corr')
+        src=x.get('src')
+        if src=='manual' or corr is not None:
+            records[str(rid)]={
+                'ok':bool(x.get('ok',False)),
+                'src':'manual',
+                'corr':None if corr is None else float(corr),
+            }
+    payload={
+        'version':1,
+        'updated_at':time.strftime('%Y-%m-%d %H:%M:%S'),
+        'records':records,
+    }
+    data=json.dumps(payload,ensure_ascii=False,indent=2).encode('utf-8')
+    service=_drive_service_review_rw()
+    media=MediaIoBaseUpload(io.BytesIO(data),mimetype='application/json',resumable=False)
+    fid=_review_state_file_id(service,folder_id)
+    if fid:
+        service.files().update(fileId=fid,media_body=media,supportsAllDrives=True).execute()
+    else:
+        body={'name':REVIEW_STATE_FILE,'parents':[folder_id],'mimeType':'application/json'}
+        service.files().create(body=body,media_body=media,fields='id',supportsAllDrives=True).execute()
+    return len(records)
+
 '''
     src = _replace_once(src, 'def build(d):\n', available_helper + 'def build(d):\n', 'contador AVAILABLE')
 
@@ -221,11 +298,60 @@ sk='state_'+fp
 """
     src = _replace_once(src, old_prepare, new_prepare, 'preparación única de datos')
 
+    # Load manual OK/corrections from Drive once per source fingerprint.
+    old_state_init = """if sk not in st.session_state:st.session_state[sk]=fresh(d)
+state=st.session_state[sk]
+hold_key='ok_hold_'+fp
+"""
+    new_state_init = """persist_msg_key='persist_msg_'+fp
+persist_err_key='persist_err_'+fp
+if sk not in st.session_state:
+    _base_state=fresh(d)
+    if has_service_account():
+        try:
+            _saved=load_review_state_drive(folder_id)
+            for _rid,_sx in _saved.items():
+                if _rid not in _base_state or _base_state[_rid].get('src')=='auto':
+                    continue
+                _corr=num(_sx.get('corr')) if isinstance(_sx,dict) else None
+                _ok=bool(_sx.get('ok',False)) if isinstance(_sx,dict) else False
+                if _corr is not None and _corr>=0:
+                    _base_state[_rid]['ok']=False
+                    _base_state[_rid]['src']='manual'
+                    _base_state[_rid]['corr']=_corr
+                elif _ok:
+                    _base_state[_rid]['ok']=True
+                    _base_state[_rid]['src']='manual'
+                    _base_state[_rid]['corr']=None
+            save_review_state_drive(folder_id,_base_state)
+            st.session_state[persist_msg_key]='Autoguardado en Drive activo.'
+            st.session_state.pop(persist_err_key,None)
+        except Exception as e:
+            st.session_state[persist_err_key]=str(e)
+    st.session_state[sk]=_base_state
+state=st.session_state[sk]
+hold_key='ok_hold_'+fp
+if persist_err_key in st.session_state:
+    st.sidebar.warning('⚠️ Las correcciones quedan solo en esta sesión porque Drive no permite guardarlas. Compartí la carpeta con la cuenta de servicio como EDITOR. Detalle: '+st.session_state[persist_err_key][:160])
+elif has_service_account():
+    st.sidebar.success('💾 Correcciones: guardado automático en Drive')
+if st.sidebar.button('💾 Guardar correcciones ahora',use_container_width=True):
+    try:
+        save_review_state_drive(folder_id,st.session_state[sk])
+        st.session_state[persist_msg_key]='Guardado '+time.strftime('%H:%M:%S')
+        st.session_state.pop(persist_err_key,None)
+        st.sidebar.success('Correcciones guardadas.')
+    except Exception as e:
+        st.session_state[persist_err_key]=str(e)
+        st.sidebar.error('No pude guardar en Drive. La carpeta debe estar compartida con la cuenta de servicio como EDITOR.')
+"""
+    src = _replace_once(src, old_state_init, new_state_init, 'persistencia de correcciones')
+
     # Reset must also invalidate any prepared export.
     src = _replace_once(
         src,
         "st.session_state[sk]=fresh(d);st.session_state[hold_key]={}\n    for k in list(st.session_state):",
-        "st.session_state[sk]=fresh(d);st.session_state[hold_key]={};st.session_state.pop('prepared_excel_'+fp,None)\n    for k in list(st.session_state):",
+        "st.session_state[sk]=fresh(d);st.session_state[hold_key]={};st.session_state.pop('prepared_excel_'+fp,None)\n    try:\n        save_review_state_drive(folder_id,st.session_state[sk]);st.session_state[persist_msg_key]='Estado reiniciado y guardado en Drive.';st.session_state.pop(persist_err_key,None)\n    except Exception as e:\n        st.session_state[persist_err_key]=str(e)\n    for k in list(st.session_state):",
         'reinicio',
     )
 
@@ -338,7 +464,7 @@ with st.expander('📋 Clientes AVAILABLE para seguimiento y descarga',expanded=
         use_container_width=True,
         key=f'dl_av_full_{fp}'
     )
-    _codigos='\\n'.join(_av_f['Código cliente'].astype(str).tolist())
+    _codigos='\n'.join(_av_f['Código cliente'].astype(str).tolist())
     _dl2.download_button(
         '⬇ Descargar solo códigos',
         _codigos.encode('utf-8'),
@@ -411,17 +537,29 @@ st.info(f"Página {page} de {pages} · mostrando clientes {_start+1 if _filtered
         'filtro No OK',
     )
 
+    # Persist manual changes immediately to Drive.
+    persist_helper = """def persist_review_state_now():
+    try:
+        save_review_state_drive(folder_id,st.session_state[sk])
+        st.session_state[persist_msg_key]='Guardado '+time.strftime('%H:%M:%S')
+        st.session_state.pop(persist_err_key,None)
+    except Exception as e:
+        st.session_state[persist_err_key]=str(e)
+
+"""
+    src = _replace_once(src, 'def cb_corr(rid,key):\n', persist_helper + 'def cb_corr(rid,key):\n', 'helper de persistencia')
+
     # Text correction invalidates a previously prepared export.
     src = _replace_once(
         src,
         "if not v:x['corr']=None;return",
-        "if not v:x['corr']=None;st.session_state.pop('prepared_excel_'+fp,None);return",
+        "if not v:x['corr']=None;st.session_state.pop('prepared_excel_'+fp,None);persist_review_state_now();return",
         'borrar corrección',
     )
     src = _replace_once(
         src,
         "x['corr']=n;x['src']='manual'",
-        "x['corr']=n;x['src']='manual';st.session_state.pop('prepared_excel_'+fp,None)",
+        "x['corr']=n;x['src']='manual';st.session_state.pop('prepared_excel_'+fp,None);persist_review_state_now()",
         'guardar corrección',
     )
 
@@ -439,12 +577,12 @@ def undo_ok(rid):
     new_actions = """def mark_ok(rid):
     x=st.session_state[sk][rid]
     if x['corr'] is not None:return
-    x['ok']=True;x['src']='manual';st.session_state[hold_key][rid]=time.time();st.session_state.pop('prepared_excel_'+fp,None)
+    x['ok']=True;x['src']='manual';st.session_state[hold_key][rid]=time.time();st.session_state.pop('prepared_excel_'+fp,None);persist_review_state_now()
 
 def undo_ok(rid):
     x=st.session_state[sk][rid]
     if x.get('src')=='auto':return
-    x['ok']=False;x['src']=None;st.session_state[hold_key].pop(rid,None);st.session_state.pop('prepared_excel_'+fp,None)
+    x['ok']=False;x['src']=None;st.session_state[hold_key].pop(rid,None);st.session_state.pop('prepared_excel_'+fp,None);persist_review_state_now()
 """
     src = _replace_once(src, old_actions, new_actions, 'callbacks OK')
 
