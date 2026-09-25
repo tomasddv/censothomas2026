@@ -1,5 +1,8 @@
 """Validate the generated app, not just its bootstrap wrapper."""
 import ast
+import base64
+import gzip
+import io
 import subprocess
 import unittest
 import pandas as pd
@@ -19,6 +22,23 @@ class GeneratedSourceTest(unittest.TestCase):
         generated = scope['_optimized_source']()
         compile(generated, 'ddv_censo_v2', 'exec')
         parsed = ast.parse(generated)
+        lookup_nodes = []
+        for node in parsed.body:
+            if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id in {'CLIENT_LOOKUP_B64', 'SALES_LOOKUP_B64'} for t in node.targets):
+                lookup_nodes.append(node)
+            if isinstance(node, ast.FunctionDef) and node.name in {'_decode_lookup', 'lookups'}:
+                node.decorator_list = []
+                lookup_nodes.append(node)
+        lookup_env = {'pd': pd, 'base64': base64, 'gzip': gzip, 'io': io}
+        exec(compile(ast.Module(body=lookup_nodes, type_ignores=[]), 'lookups', 'exec'), lookup_env)
+        _, sales = lookup_env['lookups']()
+        self.assertTrue(sales.index.is_unique)
+        liter = sales.loc[('3371', '1890 + BAJO CERO / 1 litro')]
+        self.assertEqual(list(liter[['jun', 'jul', 'aug']]), [4, 8, 5])
+        self.assertAlmostEqual(liter.monthlyBultos, 17 / 3)
+        self.assertAlmostEqual(liter.weeklyPacks, 17 * 7 / 92)
+        self.assertAlmostEqual(sales.loc[('3371', '1890 + BAJO CERO / 473cc'), 'monthlyBultos'], 1)
+        self.assertAlmostEqual(sales.loc[('3371', '1890 + BAJO CERO / 710cc'), 'monthlyBultos'], .25 / 3)
         assignment = next(n for n in ast.walk(parsed) if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == '_codigos' for t in n.targets))
         separator = ast.literal_eval(assignment.value.func.value)
         self.assertEqual(separator.join(['1', '2571']), '1\n2571')
