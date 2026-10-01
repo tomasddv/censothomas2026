@@ -619,7 +619,8 @@ def undo_ok(rid):
     refresh_state += "        x['ok']=auto(r);x['src']='auto' if x['ok'] else None\n"
     src = _replace_once(src,'state=st.session_state[sk]',refresh_state,'recalcular OK cliente 3371')
 
-    return src
+    from audited_source import apply_audit_fixes
+    return apply_audit_fixes(src)
 
 
 try:

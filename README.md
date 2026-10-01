@@ -22,3 +22,34 @@ Main file path:
 
 ## Dependencias
 Streamlit instalará las dependencias desde `censo_revision/requirements.txt` si el despliegue las contempla desde esa carpeta. Si tu despliegue busca únicamente `requirements.txt` en la raíz del repo, copiá también este archivo a la raíz o agregá allí estas dependencias.
+# Auditoría de ventas — 01/10/2026
+
+La comparación usa **compras al distribuidor de junio–agosto 2026**, en bultos,
+del archivo `trimestre bultos.txt`. No es un trimestre móvil ni una medición de
+venta del comercio. Mensual = suma de los tres meses / 3; semanal = suma × 7 / 92.
+
+`data/sales_jun_aug_2026.csv.gz` contiene todos los pares con movimientos del
+archivo completo, sin filtrar por los clientes presentes en un censo anterior.
+`sales_snapshot.py` completa ceros sólo para clientes identificados en el archivo
+y presentaciones validadas. Clientes desconocidos, OW y 1200 cc quedan N/D.
+Los ajustes negativos se conservan. N/D y cantidades negativas no reciben OK automático.
+
+El manifiesto documenta fuente, huellas, períodos, clientes y equivalencias de los
+16 SKUs. El cargador verifica integridad, duplicados y fórmulas. La posición de
+preguntas se controla para proteger los identificadores heredados de correcciones.
+Las decisiones manuales tienen prioridad al restaurar y se guardan como cambios
+individuales, preservando registros de otros censos. La escritura simultánea del
+mismo archivo de Drive no cuenta con control transaccional; evitar ediciones
+simultáneas hasta migrar el almacenamiento o incorporar control de concurrencia.
+
+Reproducir la referencia desde el archivo fuente:
+
+```powershell
+python sales_snapshot.py "C:/ruta/trimestre bultos.txt"
+$env:CENSO_SALES_SOURCE="C:/ruta/trimestre bultos.txt"
+python -m unittest discover -v
+```
+
+Sin `CENSO_SALES_SOURCE`, se ejecutan las pruebas del snapshot publicado y se
+omite únicamente la reconciliación opcional contra el archivo privado completo.
+
