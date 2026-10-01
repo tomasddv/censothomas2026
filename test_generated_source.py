@@ -33,6 +33,10 @@ class GeneratedSourceTest(unittest.TestCase):
         exec(compile(ast.Module(body=lookup_nodes, type_ignores=[]), 'lookups', 'exec'), lookup_env)
         _, sales = lookup_env['lookups']()
         self.assertTrue(sales.index.is_unique)
+        brahma = sales.loc[('5442', 'BRAHMA / 473cc')]
+        self.assertEqual(list(brahma[['jun', 'jul', 'aug']]), [3, 1, 0])
+        self.assertAlmostEqual(brahma.monthlyBultos, 4 / 3)
+        self.assertAlmostEqual(brahma.weeklyPacks, 28 / 92)
         liter = sales.loc[('3371', '1890 + BAJO CERO / 1 litro')]
         self.assertEqual(list(liter[['jun', 'jul', 'aug']]), [4, 8, 5])
         self.assertAlmostEqual(liter.monthlyBultos, 17 / 3)

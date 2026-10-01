@@ -271,7 +271,7 @@ fp=h.hexdigest()[:12];sk='state_'+fp
 for name,b in files:
     h.update(name.encode('utf-8'));h.update(b)
 fp=h.hexdigest()[:12]
-_data_key='prepared_data_v6_sales3371_'+fp
+_data_key='prepared_data_v7_sales5442_'+fp
 if _data_key not in st.session_state:
     try:
         combined=combine_censo_files(files)
@@ -604,6 +604,7 @@ def undo_ok(rid):
     # Reconcile client 3371 with the supplied Chess June-August bultos export.
     # The historical lookup only covered clients present in the original census.
     sales_patch = [{'client': '3371', 'product': '1890 + BAJO CERO / 1 litro', 'jun': 4.0, 'jul': 8.0, 'aug': 5.0, 'monthlyBultos': 5.666666666666667, 'weeklyPacks': 1.2934782608695652, 'coverage': 'Con ventas registradas'}, {'client': '3371', 'product': '1890 + BAJO CERO / 473cc', 'jun': 0.0, 'jul': 2.0, 'aug': 1.0, 'monthlyBultos': 1.0, 'weeklyPacks': 0.22826086956521738, 'coverage': 'Con ventas registradas'}, {'client': '3371', 'product': '1890 + BAJO CERO / 710cc', 'jun': 0.0, 'jul': 0.0, 'aug': 0.25, 'monthlyBultos': 0.08333333333333333, 'weeklyPacks': 0.019021739130434784, 'coverage': 'Con ventas registradas'}]
+    sales_patch.append({'client': '5442', 'product': 'BRAHMA / 473cc', 'jun': 3.0, 'jul': 1.0, 'aug': 0.0, 'monthlyBultos': 1.3333333333333333, 'weeklyPacks': 0.30434782608695654, 'coverage': 'Con ventas registradas'})
     lookup_return = "    return c.set_index('client',drop=False),s.set_index(['client','product'],drop=False)"
     lookup_fixed = "    patches=pd.DataFrame(" + repr(sales_patch) + ")\n"
     lookup_fixed += "    s=pd.concat([s,patches],ignore_index=True).drop_duplicates(['client','product'],keep='last')\n"
@@ -611,8 +612,8 @@ def undo_ok(rid):
     src = _replace_once(src,lookup_return,lookup_fixed,'ventas verificadas cliente 3371')
     # Refresh automatic decisions for the reconciled rows; preserve manual work.
     refresh_state = "state=st.session_state[sk]\n"
-    refresh_state += "if not st.session_state.get('sales3371_refreshed_'+fp):\n    st.session_state.pop('prepared_excel_'+fp,None)\n    st.session_state['sales3371_refreshed_'+fp]=True\n"
-    refresh_state += "for r in d[d['client'].eq('3371') & d['product'].str.startswith('1890 + BAJO CERO / ')].itertuples():\n"
+    refresh_state += "if not st.session_state.get('sales5442_refreshed_'+fp):\n    st.session_state.pop('prepared_excel_'+fp,None)\n    st.session_state['sales5442_refreshed_'+fp]=True\n"
+    refresh_state += "for r in d[(d['client'].eq('3371') & d['product'].str.startswith('1890 + BAJO CERO / ')) | (d['client'].eq('5442') & d['product'].eq('BRAHMA / 473cc'))].itertuples():\n"
     refresh_state += "    x=state[r.id]\n"
     refresh_state += "    if x.get('src')!='manual' and x.get('corr') is None:\n"
     refresh_state += "        x['ok']=auto(r);x['src']='auto' if x['ok'] else None\n"
