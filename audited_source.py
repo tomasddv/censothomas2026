@@ -48,7 +48,7 @@ def num(v):
     change("if si is None:\n                get=lambda k,default=None: (0.0 if k in {'weeklyPacks','monthlyBultos','jun','jul','aug'} else ('Sin movimientos en ventas' if k=='coverage' else default))",
            "if si is None:\n                reason='Presentación sin equivalencia validada' if p in {'1200cc','1 litro OW'} else 'Cliente sin cruce en archivo de ventas'\n                get=lambda k,default=None: reason if k=='coverage' else default")
     change("def auto(r):return pd.notna(r.census) and pd.notna(r.weekly) and abs(float(r.census)-float(r.weekly))<=.50+1e-9",
-           "def auto(r):return num(r.census) is not None and num(r.weekly) is not None and float(r.census)>=0 and float(r.weekly)>=0 and abs(float(r.census)-float(r.weekly))<=.50+1e-9")
+           "def auto(r):return pd.isna(r.weekly) or (num(r.census) is not None and num(r.weekly) is not None and float(r.census)>=0 and float(r.weekly)>=0 and abs(float(r.census)-float(r.weekly))<=.50+1e-9)")
     # Normalize accented question/brand text before matching.
     change("s=txt(v).upper();o=set()", "s=unicodedata.normalize('NFKD',txt(v)).encode('ascii','ignore').decode().upper();o=set()")
     change("u=q.upper().replace('CLÁSICA','CLASICA')", "u=unicodedata.normalize('NFKD',q).encode('ascii','ignore').decode().upper()")
@@ -98,7 +98,7 @@ def persist_review_state_now(rid):
     # Explicit scope and definitions beside the numbers and in every export.
     change("st.caption('Drive → cruce de ventas → revisión por promotor → descarga de correcciones')",
            "st.caption('Compras al distribuidor: junio–agosto 2026 · bultos. Promedio mensual = total / 3; semanal = total × 7 / 92 días. El censo declara ventas del comercio, por lo que la comparación es una referencia.')")
-    change("Sin ventas registradas para esos SKUs se toma Venta = 0.", "Sin cruce o presentación validada se muestra N/D y queda pendiente. Cero significa sin movimientos de ese producto para un cliente identificado en el archivo.")
+    change("Sin ventas registradas para esos SKUs se toma Venta = 0.", "Sin cruce o presentación validada se muestra N/D y se marca OK automático por criterio de revisión. Cero significa sin movimientos de ese producto para un cliente identificado en el archivo.")
     change("if v is None or pd.isna(v):return '—'", "if v is None or pd.isna(v):return 'N/D'")
     change("st.write(f'**Pregunta:** {r.field}');st.write(f'**Ventas:", "st.write(f'**Pregunta:** {r.field}');st.write(f'**Cruce:** {r.coverage}');st.write(f'**Ventas:")
     change("return z[cols].rename(columns=dict(zip(cols,names)))", "out=z[cols].rename(columns=dict(zip(cols,names))).copy()\n    out['Unidad']=z['unit'].values\n    out['Período ventas']='Junio–agosto 2026 (92 días)'\n    out['Fuente ventas']='trimestre bultos.txt'\n    return out")
@@ -107,6 +107,7 @@ def persist_review_state_now(rid):
     change("a.metric('Clientes a revisar'", "a.metric('Clientes a revisar · total'")
     change('def lookups():',f'def lookups(sales_revision={revision!r}):')
     change('prepared_data_audit_20261001_',f'prepared_data_audit_{revision}_')
-    change('audit20261001_refreshed_',f'audit_{revision}_refreshed_')
+    change('audit20261001_refreshed_',f'audit_nd_ok_v2_{revision}_refreshed_')
+    change("st.sidebar.caption('OK automático: diferencia absoluta entre Censado y Venta prom./sem. ≤ 0,50.')", "st.sidebar.caption('OK automático: diferencia absoluta ≤ 0,50 o venta N/D. Las correcciones manuales se conservan.')")
     compile(src,'ddv_censo_audit','exec')
     return src

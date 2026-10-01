@@ -58,15 +58,15 @@ class AuditRulesTest(unittest.TestCase):
         workbook=pd.read_excel(io.BytesIO(self.env['excel'](z,z.iloc[:0])),sheet_name='Correcciones')
         self.assertAlmostEqual(workbook.iloc[0]['Venta prom. semanal'],28/92)
 
-    def test_missing_is_not_zero_or_automatic(self):
+    def test_missing_remains_unknown_but_is_automatic(self):
         r=self.env['build'](pd.DataFrame([self.row(account_id='07054999999999')])).iloc[0]
-        self.assertTrue(pd.isna(r.weekly));self.assertFalse(self.env['auto'](r))
+        self.assertTrue(pd.isna(r.weekly));self.assertTrue(self.env['auto'](r))
 
-    def test_unknown_pack_stays_pending(self):
+    def test_unknown_pack_is_automatic(self):
         row=self.row();row['¿Cuantos cajones de BRAHMA 1 litro OW vende por semana?']=0
         d=self.env['build'](pd.DataFrame([row]))
         r=d[d['product'].eq('BRAHMA / 1 litro OW')].iloc[0]
-        self.assertTrue(pd.isna(r.weekly));self.assertFalse(self.env['auto'](r))
+        self.assertTrue(pd.isna(r.weekly));self.assertTrue(self.env['auto'](r))
 
     def test_latest_clean_census_replaces_old_flag(self):
         old=self.row(FECHA_TAREA='2026-09-29')
@@ -78,7 +78,9 @@ class AuditRulesTest(unittest.TestCase):
         self.assertTrue(self.env['build'](pd.DataFrame([self.row(DISTRIBUIDOR='OTRO')])).empty)
         for n in ['nan','Infinity','1e309',True]:self.assertIsNone(self.env['num'](n))
         self.assertEqual(self.env['num']('1.234,50'),1234.5)
-        self.assertFalse(self.env['auto'](SimpleNamespace(census=0,weekly=None)))
+        self.assertTrue(self.env['auto'](SimpleNamespace(census=0,weekly=None)))
+        self.assertTrue(self.env['auto'](SimpleNamespace(census=1,weekly=.5)))
+        self.assertFalse(self.env['auto'](SimpleNamespace(census=1.01,weekly=.5)))
         self.assertFalse(self.env['auto'](SimpleNamespace(census=-.25,weekly=-.25)))
 
     def test_schema_drift_fails_closed(self):

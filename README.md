@@ -32,7 +32,7 @@ venta del comercio. Mensual = suma de los tres meses / 3; semanal = suma × 7 / 
 archivo completo, sin filtrar por los clientes presentes en un censo anterior.
 `sales_snapshot.py` completa ceros sólo para clientes identificados en el archivo
 y presentaciones validadas. Clientes desconocidos, OW y 1200 cc quedan N/D.
-Los ajustes negativos se conservan. N/D y cantidades negativas no reciben OK automático.
+Los ajustes negativos se conservan. Por criterio solicitado, N/D recibe OK automático; mantiene el dato de venta N/D. Para valores numéricos se conserva diferencia absoluta ≤ 0,50; cantidades negativas no se aprueban automáticamente.
 
 El manifiesto documenta fuente, huellas, períodos, clientes y equivalencias de los
 16 SKUs. El cargador verifica integridad, duplicados y fórmulas. La posición de
@@ -52,4 +52,3 @@ python -m unittest discover -v
 
 Sin `CENSO_SALES_SOURCE`, se ejecutan las pruebas del snapshot publicado y se
 omite únicamente la reconciliación opcional contra el archivo privado completo.
-
