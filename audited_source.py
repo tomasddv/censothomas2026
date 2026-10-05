@@ -48,7 +48,7 @@ def num(v):
     change("if si is None:\n                get=lambda k,default=None: (0.0 if k in {'weeklyPacks','monthlyBultos','jun','jul','aug'} else ('Sin movimientos en ventas' if k=='coverage' else default))",
            "if si is None:\n                reason='Presentación sin equivalencia validada' if p in {'1200cc','1 litro OW'} else 'Cliente sin cruce en archivo de ventas'\n                get=lambda k,default=None: reason if k=='coverage' else default")
     change("def auto(r):return pd.notna(r.census) and pd.notna(r.weekly) and abs(float(r.census)-float(r.weekly))<=.50+1e-9",
-           "def auto(r):return pd.isna(r.weekly) or (num(r.census) is not None and num(r.weekly) is not None and float(r.census)>=0 and float(r.weekly)>=0 and abs(float(r.census)-float(r.weekly))<=.50+1e-9)")
+           "def auto(r):return pd.isna(r.weekly) or (num(r.census) is not None and num(r.weekly) is not None and float(r.census)>=0 and float(r.weekly)>=0 and abs(float(r.census)-float(r.weekly))<=1.0+1e-9)")
     # Normalize accented question/brand text before matching.
     change("s=txt(v).upper();o=set()", "s=unicodedata.normalize('NFKD',txt(v)).encode('ascii','ignore').decode().upper();o=set()")
     change("u=q.upper().replace('CLÁSICA','CLASICA')", "u=unicodedata.normalize('NFKD',q).encode('ascii','ignore').decode().upper()")
@@ -107,7 +107,8 @@ def persist_review_state_now(rid):
     change("a.metric('Clientes a revisar'", "a.metric('Clientes a revisar · total'")
     change('def lookups():',f'def lookups(sales_revision={revision!r}):')
     change('prepared_data_audit_20261001_',f'prepared_data_audit_{revision}_')
-    change('audit20261001_refreshed_',f'audit_nd_ok_v2_{revision}_refreshed_')
+    change('audit20261001_refreshed_',f'audit_nd_ok_margin1_v3_{revision}_refreshed_')
     change("st.sidebar.caption('OK automático: diferencia absoluta entre Censado y Venta prom./sem. ≤ 0,50.')", "st.sidebar.caption('OK automático: diferencia absoluta ≤ 0,50 o venta N/D. Las correcciones manuales se conservan.')")
+    change('≤ 0,50', '≤ 1,00')
     compile(src,'ddv_censo_audit','exec')
     return src

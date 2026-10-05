@@ -79,8 +79,10 @@ class AuditRulesTest(unittest.TestCase):
         for n in ['nan','Infinity','1e309',True]:self.assertIsNone(self.env['num'](n))
         self.assertEqual(self.env['num']('1.234,50'),1234.5)
         self.assertTrue(self.env['auto'](SimpleNamespace(census=0,weekly=None)))
-        self.assertTrue(self.env['auto'](SimpleNamespace(census=1,weekly=.5)))
-        self.assertFalse(self.env['auto'](SimpleNamespace(census=1.01,weekly=.5)))
+        self.assertTrue(self.env['auto'](SimpleNamespace(census=1.5,weekly=.5)))
+        self.assertTrue(self.env['auto'](SimpleNamespace(census=.5,weekly=1.5)))
+        self.assertFalse(self.env['auto'](SimpleNamespace(census=1.51,weekly=.5)))
+        self.assertFalse(self.env['auto'](SimpleNamespace(census=.5,weekly=1.51)))
         self.assertFalse(self.env['auto'](SimpleNamespace(census=-.25,weekly=-.25)))
 
     def test_schema_drift_fails_closed(self):
