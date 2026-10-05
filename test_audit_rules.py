@@ -85,6 +85,21 @@ class AuditRulesTest(unittest.TestCase):
         self.assertFalse(self.env['auto'](SimpleNamespace(census=.5,weekly=1.51)))
         self.assertFalse(self.env['auto'](SimpleNamespace(census=-.25,weekly=-.25)))
 
+    def test_refresh_existing_session_for_reported_cases(self):
+        d=pd.DataFrame([{'id':'3747','census':1.,'weekly':0.},
+                        {'id':'5183','census':1.,'weekly':.38},
+                        {'id':'manual','census':1.,'weekly':0.}])
+        state={'3747':{'ok':False,'src':None,'corr':None},
+               '5183':{'ok':False,'src':'manual','corr':None},
+               'manual':{'ok':False,'src':'manual','corr':2.}}
+        self.assertTrue(self.env['_refresh_automatic'](d,state))
+        for rid in ['3747','5183']:
+            self.assertTrue(state[rid]['ok'])
+            self.assertEqual(state[rid]['src'],'auto')
+        self.assertEqual(state['manual']['corr'],2.)
+        self.assertFalse(state['manual']['ok'])
+        self.assertFalse(self.env['_refresh_automatic'](d,state))
+
     def test_schema_drift_fails_closed(self):
         from sales_snapshot import validate_census_schema,DATA
         mapping=json.loads((DATA/'census_schema.json').read_text(encoding='utf-8'))

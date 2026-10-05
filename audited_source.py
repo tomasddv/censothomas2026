@@ -55,13 +55,20 @@ def num(v):
     change("prepared_data_v7_sales5442_", "prepared_data_audit_20261001_")
     start=src.index("if not st.session_state.get('sales5442_refreshed_'+fp):")
     end=src.index("hold_key='ok_hold_'+fp",start)
-    src=src[:start]+'''if not st.session_state.get('audit20261001_refreshed_'+fp):
-    st.session_state.pop('prepared_excel_'+fp,None)
+    src=src[:start]+'''def _refresh_automatic(d,state):
+    changed=False
     for r in d.itertuples():
         x=state.setdefault(r.id,{'ok':False,'src':None,'corr':None})
-        if x.get('src')!='manual' and x.get('corr') is None:
-            x['ok']=auto(r);x['src']='auto' if x['ok'] else None
-    st.session_state['audit20261001_refreshed_'+fp]=True
+        if x.get('corr') is not None or (x.get('src')=='manual' and x.get('ok')):
+            continue
+        approved=bool(auto(r))
+        origin='auto' if approved else None
+        if x.get('ok')!=approved or x.get('src')!=origin:
+            x['ok']=approved;x['src']=origin;changed=True
+    return changed
+
+if _refresh_automatic(d,state):
+    st.session_state.pop('prepared_excel_'+fp,None)
 
 '''+src[end:]
     # Restoring saved human decisions must never be overridden by new automatic values.
@@ -107,7 +114,6 @@ def persist_review_state_now(rid):
     change("a.metric('Clientes a revisar'", "a.metric('Clientes a revisar · total'")
     change('def lookups():',f'def lookups(sales_revision={revision!r}):')
     change('prepared_data_audit_20261001_',f'prepared_data_audit_{revision}_')
-    change('audit20261001_refreshed_',f'audit_nd_ok_margin1_v3_{revision}_refreshed_')
     change("st.sidebar.caption('OK automático: diferencia absoluta entre Censado y Venta prom./sem. ≤ 0,50.')", "st.sidebar.caption('OK automático: diferencia absoluta ≤ 0,50 o venta N/D. Las correcciones manuales se conservan.')")
     change('≤ 0,50', '≤ 1,00')
     compile(src,'ddv_censo_audit','exec')
